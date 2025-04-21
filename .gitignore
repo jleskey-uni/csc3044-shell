@@ -1,0 +1,11 @@
+# System
+.DS_Store
+
+# Binaries
+out/
+
+# File locks
+.~lock.*
+
+# Editor
+.vscode/
