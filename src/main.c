@@ -1,3 +1,6 @@
+// Author: Joseph Leskey
+// Date: 21 April 2025
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
