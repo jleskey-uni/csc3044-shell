@@ -6,14 +6,16 @@
 #include <string.h>
 #include <ctype.h>
 
-#define ARG_LIST_LENGTH 10
+#define ARG_LIST_LENGTH 9
 
 bool streq(const char *a, const char *b);
 
 char *getUsername();
 void writeWorkingDirectory(bool relative, char *target, size_t size);
 
-int parseCommand(char argv[][ARG_LIST_LENGTH]);
+int parseCommand(char argv[][ARG_LIST_LENGTH], bool *background);
+void runProcess(int argc, char argv[][ARG_LIST_LENGTH], const bool background);
+void changeDirectory(int argc, char argv[][ARG_LIST_LENGTH]);
 bool processCommand();
 bool prompt();
 
@@ -28,7 +30,7 @@ bool prompt()
     char curDir[NAME_MAX];
     writeWorkingDirectory(true, curDir, NAME_MAX);
 
-    printf("%s %s %% ", getUsername(), curDir);
+    printf("%s (%s) %% ", getUsername(), curDir);
     fflush(stdout);
 
     return processCommand();
@@ -37,7 +39,8 @@ bool prompt()
 bool processCommand()
 {
     char argv[PATH_MAX][ARG_LIST_LENGTH];
-    int argc = parseCommand(argv);
+    bool background = false;
+    int argc = parseCommand(argv, &background);
 
     if (argc)
     {
@@ -49,41 +52,90 @@ bool processCommand()
         }
         else if (streq(command, "cd"))
         {
-            char path[PATH_MAX] = "";
-
-            if (argc > 1)
-            {
-                snprintf(path, sizeof(path), "%s", argv[1]);
-            }
-            else
-            {
-                const char *home = getenv("HOME");
-
-                if (home != NULL)
-                {
-                    snprintf(path, sizeof(path), "%s", home);
-                }
-                else
-                {
-                    fprintf(stderr, "No home directory.\n");
-                }
-            }
-
-            if (chdir(path) != 0)
-            {
-                fprintf(stderr, "Could not change directory: %s\n", path);
-            }
+            changeDirectory(argc, argv);
         }
         else if (streq(command, "clear"))
         {
             system("clear");
+        }
+        else
+        {
+            runProcess(argc, argv, background);
         }
     }
 
     return true;
 }
 
-int parseCommand(char argv[][ARG_LIST_LENGTH])
+void changeDirectory(int argc, char argv[][ARG_LIST_LENGTH])
+{
+    char path[PATH_MAX] = "";
+
+    if (argc > 1)
+    {
+        snprintf(path, sizeof(path), "%s", argv[1]);
+    }
+    else
+    {
+        const char *home = getenv("HOME");
+
+        if (home != NULL)
+        {
+            snprintf(path, sizeof(path), "%s", home);
+        }
+        else
+        {
+            fprintf(stderr, "Home directory not found\n");
+        }
+    }
+
+    if (chdir(path) != 0)
+    {
+        perror("cd");
+    }
+}
+
+void runProcess(int argc, char argv[][ARG_LIST_LENGTH], bool background)
+{
+    char *command = argv[0];
+    pid_t pid = fork();
+
+    if (pid == 0)
+    {
+        // Child process
+
+        // Make sure we have our null termination.
+        char *argv_ptrs[ARG_LIST_LENGTH + 1];
+        for (int i = 0; i < argc; i++)
+        {
+            argv_ptrs[i] = argv[i];
+        }
+        argv_ptrs[argc] = NULL;
+
+        execvp(command, argv_ptrs);
+
+        perror(command);
+        exit(EXIT_FAILURE);
+    }
+    else if (pid > 0)
+    {
+        // Parent process
+        if (!background)
+        {
+            waitpid(pid, NULL, 0);
+        }
+        else
+        {
+            printf("Running in background (PID %d)\n", pid);
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Failed to fork\n");
+    }
+}
+
+int parseCommand(char argv[][ARG_LIST_LENGTH], bool *background)
 {
     // Buffer to read into from command line.
     char line[PATH_MAX * ARG_LIST_LENGTH];
@@ -98,13 +150,13 @@ int parseCommand(char argv[][ARG_LIST_LENGTH])
 
         bool quoted = false;
         bool escaped = false;
-        bool background = false;
+        *background = false;
 
         while (*c)
         {
-            if (background && *c != '&' && !isspace(*c))
+            if (*background && *c != '&' && !isspace(*c))
             {
-                fprintf(stderr, "Unexpected token '%c' after '&'.\n", *c);
+                fprintf(stderr, "Unexpected token '%c' after '&'\n", *c);
             }
             else if (!escaped && quoted && *c == '"')
             {
@@ -122,7 +174,7 @@ int parseCommand(char argv[][ARG_LIST_LENGTH])
             }
             else if (!quoted && !escaped && *c == '&')
             {
-                background = true;
+                *background = true;
             }
             else if (quoted || escaped || !isspace(*c))
             {
@@ -147,7 +199,7 @@ int parseCommand(char argv[][ARG_LIST_LENGTH])
                     }
                     else
                     {
-                        fprintf(stderr, "Too many arguments.");
+                        fprintf(stderr, "Too many arguments\n");
                         return 0;
                     }
                 }
