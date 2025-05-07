@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
+#include <sys/wait.h>
 
 #define ARG_LIST_LENGTH 9
 
